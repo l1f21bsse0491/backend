@@ -75,9 +75,10 @@ class Hierarchy {
     
     // Organize hierarchical data by company
     const companies = {};
-    const nodeMap = {};
+    const nodeMap = new Map();
 
     result.rows.forEach(row => {
+      // Initialize company if not exists
       if (!companies[row.company_name]) {
         companies[row.company_name] = {
           id: row.company_id,
@@ -94,8 +95,9 @@ class Hierarchy {
         };
       }
 
-      if (!nodeMap[row.id]) {
-        nodeMap[row.id] = {
+      // Create or get existing hierarchy node
+      if (!nodeMap.has(row.id)) {
+        nodeMap.set(row.id, {
           id: row.id,
           name: row.name,
           level: row.level_name,
@@ -105,7 +107,7 @@ class Hierarchy {
           children: [],
           devices: [],
           company_id: row.company_id
-        };
+        });
         
         // Update statistics
         companies[row.company_name].statistics.totalNodes++;
@@ -115,14 +117,16 @@ class Hierarchy {
         else if (row.level_name === 'Well') companies[row.company_name].statistics.wells++;
       }
 
+      const currentNode = nodeMap.get(row.id);
+
       // Add device info if exists
       if (row.device_id) {
         const deviceMetadata = row.metadata || {};
-        const existingDevice = nodeMap[row.id].devices.find(d => d.id === row.device_id);
+        const existingDevice = currentNode.devices.find(d => d.id === row.device_id);
         
         if (!existingDevice) {
           companies[row.company_name].statistics.devices++;
-          nodeMap[row.id].devices.push({
+          currentNode.devices.push({
             id: row.device_id,
             serial_number: row.serial_number,
             type: row.device_type,
@@ -138,12 +142,21 @@ class Hierarchy {
     });
 
     // Build hierarchy tree
-    result.rows.forEach(row => {
-      const node = nodeMap[row.id];
-      if (row.parent_id && nodeMap[row.parent_id]) {
-        nodeMap[row.parent_id].children.push(node);
+    nodeMap.forEach((node, nodeId) => {
+      if (node.parent_id && nodeMap.has(node.parent_id)) {
+        const parentNode = nodeMap.get(node.parent_id);
+        // Check if child already exists to prevent duplicates
+        if (!parentNode.children.find(child => child.id === node.id)) {
+          parentNode.children.push(node);
+        }
       } else {
-        companies[row.company_name].hierarchy.push(node);
+        // This is a root node, add to company hierarchy if not already present
+        const companyName = Object.keys(companies).find(name => 
+          companies[name].id === node.company_id
+        );
+        if (companyName && !companies[companyName].hierarchy.find(h => h.id === node.id)) {
+          companies[companyName].hierarchy.push(node);
+        }
       }
     });
 
